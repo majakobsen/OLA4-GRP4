@@ -1,3 +1,4 @@
+
 # -------------------
 # Opgave 1.2 - AutoScout24 Tyskland
 # -------------------
@@ -93,4 +94,3 @@ sammenligning <- sammenligning |>
     forskel = median_bilbasen_pris - median_totalimport,
     .groups = "drop"
   )
-
