@@ -1,20 +1,28 @@
+# -------------------
+# opgave 3.4 - Algoritme
 # --------------------
-# Opgave 3.4 - Algoritme
-# --------------------
 
-View(currentDF)
+# Koordinater: vest, syd, øst, nord
+lomin <- 28.248586
+lamin <- 28.883161
+lomax <- 39.539224
+lamax <- 37.300276
 
-CurrentDF9000 <- currentDF |>
-  filter(as.numeric(baro_altitude) > 9000)
-
-View(CurrentDF9000)
+# Find alle fly i boksen
+boxurl <- paste0(
+  baseurl, "/states/all?lamin=", lamin,
+  "&lomin=", lomin, "&lamax=", lamax, "&lomax=", lomax
+)
+token <- getToken()
+boxres <- getRawFromUrl(boxurl, token)
+boxDF <- as.data.frame(jsonlite::fromJSON(httr::content(boxres, as = "text"))$states)
+names(boxDF) <- names(currentDF)
+icaoListe <- unique(boxDF$icao24)
 
 HeaderPath <- c(
   "time", "latitude", "longitude",
   "baro_altitude", "true_track", "on_ground"
 )
-
-icaoListe <- head(CurrentDF9000$icao24, 10)
 
 KursDF <- tibble(
   icao24 = character(),
@@ -22,41 +30,53 @@ KursDF <- tibble(
   kurs = double()
 )
 
-token <- getToken()
-
 for (FlyIcao24 in icaoListe) {
-  
-  url <- str_c(
-    baseurl, "/tracks/all?icao24=", FlyIcao24, "&time=0"
-  )
-  
+  url <- paste0(baseurl, "/tracks/all?icao24=", FlyIcao24, "&time=0")
   svar <- getRawFromUrl(url, token)
   
-  print(paste(FlyIcao24, "status:", svar$status_code))
-  
-  if (svar$status_code == 429) break
-  
-  if (svar$status_code != 200) next
-  
-  flydata <- fromJSON(content(svar, as = "text"))
-  rute <- as.data.frame(flydata$path)
-  
-  print(paste("Antal rutepunkter:", nrow(rute)))
-  
-  if (nrow(rute) == 0) next
-  
-  colnames(rute) <- HeaderPath
-  
-  KursDF <- bind_rows(
-    KursDF,
-    tibble(
-      icao24 = FlyIcao24,
-      time = as.numeric(rute$time),
-      kurs = as.numeric(rute$true_track)
+  if (svar$status_code == 200) {
+    rute <- as.data.frame(
+      jsonlite::fromJSON(httr::content(svar, as = "text"))$path
     )
-  )
+    
+    if (nrow(rute) > 0) {
+      names(rute) <- HeaderPath
+      rute <- rute |>
+        filter(
+          latitude >= lamin, latitude <= lamax,
+          longitude >= lomin, longitude <= lomax
+        )
+      
+      KursDF <- bind_rows(
+        KursDF,
+        tibble(
+          icao24 = FlyIcao24,
+          time = as.numeric(rute$time),
+          kurs = as.numeric(rute$true_track)
+        )
+      )
+    }
+  }
+  
+  saveRDS(KursDF, "KursDF.rds")
 }
 
-saveRDS(KursDF, "KursDF.rds")
+KursDrejning <- KursDF |>
+  arrange(icao24, time) |>
+  group_by(icao24) |>
+  mutate(
+    ændring = kurs - lag(kurs),
+    ændring = if_else(ændring > 180, ændring - 360, ændring),
+    ændring = if_else(ændring < -180, ændring + 360, ændring)
+  ) |>
+  summarise(
+    antal_punkter = n(),
+    samlet_drejning = sum(ændring, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  filter(antal_punkter >= 10, abs(samlet_drejning) >= 360) |>
+  arrange(desc(abs(samlet_drejning)))
 
 View(KursDF)
+View(KursDrejning)
+
