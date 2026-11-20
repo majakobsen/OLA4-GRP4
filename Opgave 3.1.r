@@ -16,7 +16,6 @@ library(leaflet)
 clientId="emmahojelse-api-client"
 clientSecret="6UGXoVlxS86c38OefuHPvP77baT7Mgkf"
 
-# Request an access token
 
 getToken <- function() {
   token=NULL
@@ -30,7 +29,6 @@ getToken <- function() {
     encode = "form"
   )
   
-  # Parse the JSON response
   response$status_code
   if (response$status_code == 200) {
     content <- content(response, as = "parsed", type = "application/json")
@@ -62,13 +60,11 @@ lomin=-6.065140
 lomax=4.305954
 fullurl=paste0(baseurl,endpointS,"?lamin=",lamin,"&lomin=",lomin,"&lamax=",lamax,"&lomax=",lomax)
 
-# one take over NS (skateboard)
 token=getToken()
 res <- GET(fullurl,add_headers(Authorization = paste("Bearer", token)))
 rescontent <- content(res, as="text")
 resretval <- jsonlite::fromJSON(rescontent)
 statedfpr <- as.data.frame(resretval$states)
-# find all icaos and put in vector
 icaov=statedfpr$V1
 
 baseurl="https://opensky-network.org/api"
