@@ -2,6 +2,11 @@
 # opgave 3.4 - Algoritme
 # --------------------
 
+library(dplyr)
+library(tibble)
+library(jsonlite)
+library(httr)
+
 # Koordinater: vest, syd, øst, nord
 lomin <- 28.248586
 lamin <- 28.883161
@@ -13,9 +18,14 @@ boxurl <- paste0(
   baseurl, "/states/all?lamin=", lamin,
   "&lomin=", lomin, "&lamax=", lamax, "&lomax=", lomax
 )
+
 token <- getToken()
 boxres <- getRawFromUrl(boxurl, token)
-boxDF <- as.data.frame(jsonlite::fromJSON(httr::content(boxres, as = "text"))$states)
+
+boxDF <- as.data.frame(
+  fromJSON(httr::content(boxres, as = "text"))$states
+)
+
 names(boxDF) <- names(currentDF)
 icaoListe <- unique(boxDF$icao24)
 
@@ -41,6 +51,7 @@ for (FlyIcao24 in icaoListe) {
     
     if (nrow(rute) > 0) {
       names(rute) <- HeaderPath
+      
       rute <- rute |>
         filter(
           latitude >= lamin, latitude <= lamax,
@@ -77,6 +88,37 @@ KursDrejning <- KursDF |>
   filter(antal_punkter >= 10, abs(samlet_drejning) >= 360) |>
   arrange(desc(abs(samlet_drejning)))
 
+# Markér fly fundet af din algoritme
+myOwnAlgDF <- tibble(
+  icao = icaoListe,
+  myOwnAlg = as.integer(icaoListe %in% KursDrejning$icao24)
+)
+
+# Læs referencefly fra RDS-filerne
+rdsMappe <- "C:/Users/Lasse/Desktop/R/OLA 4/OpenSky/train"
+
+rdsFiler <- list.files(
+  rdsMappe,
+  pattern = "\\.rds$",
+  full.names = TRUE
+)
+
+offIcao <- unique(unlist(
+  lapply(rdsFiler, function(fil) readRDS(fil)$icao24)
+))
+
+# Markér referencefly med isOff = 1
+isOffDF <- tibble(
+  icao = icaoListe,
+  isOff = as.integer(icaoListe %in% offIcao)
+)
+
+# Saml og gem resultatet
+Resultat34 <- left_join(myOwnAlgDF, isOffDF, by = "icao")
+
+saveRDS(isOffDF, "isOff.rds")
+saveRDS(Resultat34, "Resultat_3_4.rds")
+
 View(KursDF)
 View(KursDrejning)
-
+View(Resultat34)
