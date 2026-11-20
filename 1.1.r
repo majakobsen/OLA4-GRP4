@@ -80,7 +80,7 @@ biler_bilbasen <- biler_bilbasen |>
   distinct(id, .keep_all = TRUE)
 
 write.csv2(biler_bilbasen, "bilbasen.csv", row.names = FALSE)
-
+ 
 View(biler_bilbasen)
 
 saveRDS(biler_bilbasen, "Bilbasen-Biler.rds")
