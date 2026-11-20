@@ -5,68 +5,99 @@
 
 library(chromote)
 library(rvest)
+library(dplyr)
 
 power_browser <- ChromoteSession$new()
-power_browser$Page$navigate(url = "https://www.power.dk")
-power_browser$view()
-Sys.sleep(15)
 
-power_html <- power_browser$Runtime$evaluate(
-  "document.documentElement.outerHTML",
-  returnByValue = TRUE
-)$result$value
-
-power_page <- read_html(power_html)
-
-# Hent alle produktkort på siden
-navne <- power_page |>
-  html_elements('[class*="product-item-title-container"] h3 a')
-
-priser <- power_page |>
-  html_elements(".main-price")
-
-tilbud <- power_page |>
-  html_elements("pwr-product-price-savings-label .savings-label")
-
-bedommelser <- power_page |>
-  html_elements('pwr-product-review [aria-label^="Bedømmelse"]')
-
-detalje_felter <- power_page |>
-  html_elements('[class*="product-item-arguments-container"]')
-
-# Saml detaljerne for hvert produktkort
-detaljer <- vapply(detalje_felter, function(felt) {
-  tekst <- felt |>
-    html_elements(".subtitle-2") |>
-    html_text2()
-  
-  paste(tekst, collapse = "; ")
-}, character(1))
-
-c(
-  navne = length(power_page |> html_elements('[class*="product-item-title-container"] h3 a')),
-  priser = length(power_page |> html_elements(".main-price")),
-  tilbud = length(power_page |> html_elements("pwr-product-price-savings-label .savings-label")),
-  bedommelser = length(power_page |> html_elements('pwr-product-review [aria-label^="Bedømmelse"]')),
-  detaljer = length(power_page |> html_elements('[class*="product-item-arguments-container"]'))
+power_browser$Emulation$setDeviceMetricsOverride(
+  width = 1440,
+  height = 1000,
+  deviceScaleFactor = 1,
+  mobile = FALSE
 )
 
-bedommelse <- rep(NA_character_, length(navne))
+power_browser$Page$navigate(
+  url = "https://www.power.dk/kampagne/aktuelt/"
+)
 
-if (length(bedommelser) > 0) {
-  bedommelse[seq_along(bedommelser)] <- html_attr(
-    bedommelser,
-    "aria-label"
-  )
+power_browser$view()
+Sys.sleep(10)
+
+power_browser$Runtime$evaluate("window.scrollTo(0, 0)")
+Sys.sleep(5)
+
+power <- data.frame()
+
+for (i in 1:40) {
+  
+  Sys.sleep(2)
+  
+  power_html <- power_browser$Runtime$evaluate(
+    "document.documentElement.outerHTML",
+    returnByValue = TRUE
+  )$result$value
+  
+  power_page <- read_html(power_html)
+  
+  produktliste <- power_page |>
+    html_elements("article.product-item")
+  
+  if (length(produktliste) == 0) {
+    produktliste <- power_page |>
+      html_elements("pwr-product-item-v2")
+  }
+  
+  for (produkt in produktliste) {
+    
+    navn <- produkt |>
+      html_element("h3 a") |>
+      html_text2()
+    
+    link <- produkt |>
+      html_element("h3 a") |>
+      html_attr("href")
+    
+    if (is.na(navn) || navn == "" || is.na(link)) next
+    
+    detaljer <- produkt |>
+      html_elements(
+        ".product-item-description-container, .product-item-arguments-container"
+      ) |>
+      html_text2()
+    
+    produkt_data <- data.frame(
+      navn = navn,
+      
+      pris = produkt |>
+        html_element("data.main-price") |>
+        html_attr("value") |>
+        as.numeric(),
+      
+      tilbud = produkt |>
+        html_element("pwr-product-price-savings-label .savings-label") |>
+        html_text2(),
+      
+      bedommelse = produkt |>
+        html_element('pwr-product-review [aria-label^="Bedømmelse"]') |>
+        html_attr("aria-label"),
+      
+      detaljer = paste(detaljer, collapse = "; "),
+      link = url_absolute(link, "https://www.power.dk")
+    )
+    
+    power <- bind_rows(power, produkt_data)
+  }
+  
+  power_browser$Runtime$evaluate("window.scrollBy(0, 400)")
 }
 
-# Saml oplysningerne i én dataframe
-power <- data.frame(
-  navn = html_text2(navne),
-  pris = html_attr(priser, "value"),
-  tilbud = html_text2(tilbud),
-  bedommelse = bedommelse,
-  detaljer = detaljer
-)
+power <- power |>
+  arrange(is.na(pris)) |>
+  distinct(link, .keep_all = TRUE)
 
 View(power)
+
+write.csv2(power, "power.csv", row.names = FALSE)
+
+power_browser$close()
+
